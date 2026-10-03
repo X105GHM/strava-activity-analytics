@@ -3,8 +3,9 @@
 > **Hinweis zur KI-Unterstützung:** Diese API und ihre Dokumentation wurden mit Unterstützung von KI entwickelt. Code und Dokumentation können Fehler enthalten und sollten vor dem produktiven Einsatz geprüft werden.
 
 REST-Schnittstelle für Athleten, Aktivitäten und zeitaufgelöste Trainingsdaten.
-Die API liefert gespeicherte Daten als JSON. Aktualisierungen werden separat
-angefordert und im Hintergrund verarbeitet.
+Aktivitätsabfragen laden die angeforderten Daten bei Strava und liefern sie als
+JSON zurück. Aktivitäten und Messpunkte werden dabei nicht dauerhaft gespeichert.
+Die Wochenübersichten pro Nutzer bleiben gespeichert und werden separat aktualisiert.
 
 **Basis-URL:** `https://sport.x105ghm.com/api/v1`  
 **Version:** `v1`
@@ -54,7 +55,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/athletes"
 ```
 
 Ein Token kann auf einen Athleten beschränkt sein oder Zugriff auf mehrere
-gespeicherte Athleten erlauben. Ein API-Token ist keine Strava-Anmeldung.
+zugängliche Athleten erlauben. Ein API-Token ist keine Strava-Anmeldung.
 Tokens gehören nicht in URLs, Quellcode oder veröffentlichte Beispielausgaben.
 
 ## Endpunkte
@@ -64,22 +65,72 @@ Alle Pfade in dieser Tabelle beginnen mit `/api/v1`.
 | Methode | Pfad | Beschreibung |
 | --- | --- | --- |
 | GET | `/athletes` | Zugängliche Athleten |
+| GET | `/athletes/search?q=...` | Sichtbare Strava-Accounts nach Namen suchen |
 | GET | `/athletes/{athlete_id}` | Einzelner Athlet |
 | GET | `/athletes/{athlete_id}/activities` | Aktivitäten mit Filtern und Pagination |
+| GET | `/activities?athlete_name=...` | Aktivitäten über einen Athletennamen abfragen |
 | GET | `/activities/{activity_id}` | Aktivitätsdetails und Sensor-Zusammenfassungen |
 | GET | `/activities/{activity_id}/streams` | Messpunkt-Zeitreihen |
 | GET | `/activities/{activity_id}/segments` | Segmentdurchfahrten |
 | GET | `/activities/{activity_id}/laps` | Runden |
-| GET | `/activities/{activity_id}/analytics` | Auswertungen gespeicherter Streams |
+| GET | `/activities/{activity_id}/analytics` | Auswertungen der bei dieser Anfrage geladenen Streams |
 | GET | `/athletes/{athlete_id}/analytics` | Wochenübersicht je Sportart |
-| POST | `/athletes/{athlete_id}/sync` | Aktivitätenkatalog aktualisieren |
-| POST | `/activities/{activity_id}/refresh` | Aktivität und zugehörige Daten aktualisieren |
+| POST | `/athletes/{athlete_id}/sync` | Gespeicherte Wochenübersicht aktualisieren |
 | GET | `/sync/jobs/{job_id}` | Status eines Aktualisierungsauftrags |
 
-Ein GET löst keinen Strava-Abruf aus. Auch fehlende oder veraltete Daten werden
-nicht während der Abfrage nachgeladen.
+GETs auf Aktivitätslisten, Details, Streams, Segmente, Laps und Activity-Analytics
+lösen einen Strava-Abruf aus. Eine Aktivität muss vorher nicht importiert oder
+synchronisiert sein. Nur die benötigten Teilressourcen werden geladen.
+
+Der Streamabruf lädt die normale Strava-Webseite in einem Serverbrowser.
+Eine Antwort kann deshalb deutlich länger dauern als eine Wochenabfrage;
+Clients sollten bis zu 240 Sekunden erlauben. Es gibt keinen dauerhaften
+Aktivitätscache und keinen automatischen Download der gesamten Historie.
+Ein gleichzeitig laufender Abruf oder Wochen-Scrape kann `503 source_busy`
+liefern. Clients sollten dann warten und nicht parallel erneut anfragen.
 
 ## Athleten und Aktivitäten
+
+### Namenssuche
+
+```http
+GET /api/v1/athletes/search?q=Vorname%20Nachname
+```
+
+Die Suche verwendet Stravas normale Accountsuche mit der vorhandenen Session.
+Die Antwort enthält `query`, `athletes` (mit `id` und `name`), `cache_hit` und
+`meta`. Namen sind Anzeigenamen, keine verifizierten Identitäten. Die Suche
+folgt den normalen Weiter-Schaltflächen für bis zu fünf Ergebnisseiten.
+Damit ist keine vollständige globale Suche garantiert. Gefundene Namen und IDs werden für 30 Tage
+zwischengespeichert. `refresh=true` fragt erneut bei Strava nach. Aktivitäten und
+Messpunkte werden durch die Namenssuche nicht heruntergeladen oder gespeichert.
+
+Die Berechtigungen des Tokens gelten auch hier. Ein auf einen Athleten beschränkter
+Token erhält ausschließlich diesen Athleten. Für weitere sichtbare Accounts ist
+der allgemeine Analyse-Token erforderlich. Namenssuche erweitert keine Berechtigungen.
+
+Ein privater Account kann in der Namenssuche auftauchen, obwohl seine Aktivitäten
+für die verwendete Strava-Session nicht sichtbar sind. Rendert Strava ausdrücklich
+eine eingeschränkte Profilseite ohne Activity-Feed, antwortet die Aktivitätsabfrage
+mit HTTP 403 und `error.code: upstream_not_visible`. Ein allgemeiner API-Token
+hebt diese Einschränkung nicht auf. `athlete_not_permitted` bezeichnet dagegen
+die Beschränkung des API-Tokens auf einen bestimmten Athleten.
+
+Direkt Radfahrten nach Namen und Zeitraum abfragen:
+
+```cmd
+curl.exe -sS -G -H "Authorization: Bearer %TOKEN%" --data-urlencode "athlete_name=Vorname Nachname" --data-urlencode "sport_type=ride" --data-urlencode "from=2026-09-28" --data-urlencode "to=2026-10-03" "%BASE%/api/v1/activities" | python -m json.tool
+```
+
+Bei mehreren passenden Accounts antwortet die API mit `409 athlete_ambiguous`
+und den Namen/IDs unter `error.details.athletes`. Dann einen Treffer auswählen
+und die vorhandene Abfrage `/athletes/{athlete_id}/activities` verwenden.
+Ein einzelner exakter Namensmatch wird gegenüber Teiltreffern bevorzugt.
+
+**Zeitraumgrenze:** Der aktuelle Activity-Fetcher liest den initialen sichtbaren
+Profilfeed. `from` und `to` filtern diese Einträge; sie laden keine vollständige
+Monats- oder Jahreshistorie nach. `history_complete=false` bleibt gesetzt. Ein
+leeres Ergebnis beweist daher nicht, dass in diesem Zeitraum keine Aktivität stattfand.
 
 `GET /athletes` liefert ein Objekt mit dem Array `athletes`. Ein Athlet enthält
 `id`, `name`, `timezone`, `history_complete` und `meta`.
@@ -272,7 +323,7 @@ auswählen oder die ungefilterten Daten prüfen.
 
 `points` und `null_count` beziehen sich nach einer Zeitfilterung auf den
 gelieferten Ausschnitt. `warnings` können weiterhin andere Reihen des
-gespeicherten Datensatzes betreffen, auch wenn diese nicht ausgewählt wurden.
+geladenen Datensatzes betreffen, auch wenn diese nicht ausgewählt wurden.
 
 ## Verfügbarkeit und fehlende Werte
 
@@ -373,7 +424,7 @@ Die Zeit-Auswertung `metrics.time_range` enthält `start_s`, `end_s`, `span_s`,
 `moving_time_from_stream` aus beobachteten Intervallen berechnet. Größere Lücken
 werden ausgeschlossen und unter `excluded_gap_s` ausgewiesen.
 
-Die Auswertung verwendet den gespeicherten Datensatz. Sie übernimmt keine
+Die Auswertung lädt ihre Daten bei Strava. Sie übernimmt keine
 Zeit- oder Streamfilter einer zuvor ausgeführten `/streams`-Abfrage.
 
 ### Athlet
@@ -395,25 +446,19 @@ Der Endpunkt ist keine frei filterbare Langzeit-Trainingsanalyse.
 
 ## Aktualisierung
 
-1. Athleten mit `GET /athletes` abfragen.
-2. Mit `POST /athletes/{athlete_id}/sync` den Aktivitätenkatalog aktualisieren.
-3. Den Auftrag über `GET /sync/jobs/{job_id}` verfolgen.
-4. Aktivitätenliste lesen und gewünschte Aktivitäten auswählen.
-5. Mit `POST /activities/{activity_id}/refresh` deren Details und Teilressourcen laden.
-6. Nach Abschluss Streams und Analytics abfragen.
+Aktivitätsdaten direkt per GET abfragen. Der Server lädt nur die angeforderte
+Aktivität beziehungsweise den sichtbaren Profilfeed und verwirft die Daten
+nach der Antwort. Die Liste ist weiterhin keine vollständige Historie;
+Filter und Pagination beziehen sich auf den aktuell geladenen Profilfeed.
 
-Ein Athleten-Sync lädt den sichtbaren Profilkatalog, nicht automatisch alle
-Detailseiten oder die vollständige Historie. Für einen Activity-Refresh muss
-die Aktivität bereits im Repository bekannt sein.
-
-Die beiden POST-Endpunkte benötigen keinen Request-Body und antworten mit
-HTTP 202 sowie einem Auftrag:
+`POST /athletes/{athlete_id}/sync` aktualisiert die gespeicherten Wochenwerte.
+Der Endpunkt benötigt keinen Request-Body und antwortet mit HTTP 202 sowie einem Auftrag:
 
 ```json
 {
   "id": "2bbdb2a9f7d948869c5ec1cc9d971bfb",
-  "resource_type": "activity",
-  "resource_id": "67890",
+  "resource_type": "athlete",
+  "resource_id": "12345",
   "state": "queued",
   "created_at": "2026-10-03T12:00:00Z",
   "updated_at": "2026-10-03T12:00:00Z",
@@ -430,7 +475,7 @@ HTTP 202 sowie einem Auftrag:
 | `failed` | Kein gemeldeter Teilabruf erfolgreich. |
 
 Nach der Verarbeitung enthält `results` die Verfügbarkeit der einzelnen Teile,
-beispielsweise `details`, `segments`, `laps` und `streams`.
+hier `weekly_summary`.
 HTTP 202 bedeutet Annahme des Auftrags, nicht erfolgreichen Datenabruf.
 
 Wiederholte Anfragen während `queued` oder `running` liefern denselben Auftrag.
@@ -445,17 +490,17 @@ Die Metadaten gehören jeweils zur abgefragten Ressource:
 | Feld | Bedeutung |
 | --- | --- |
 | `source` | Datenquelle, z. B. `strava_web` oder `authorized_json_import` |
-| `schema_version` | Version des gespeicherten Modells |
+| `schema_version` | Version des JSON-Modells |
 | `fetched_at` | Zeitpunkt des letzten erfolgreichen Abrufs; sonst `null` |
 | `last_attempt_at` | Zeitpunkt des letzten Abrufversuchs |
 | `last_attempt_status` | Ergebnis dieses Versuchs |
 | `upstream_status` | HTTP-Status der Datenquelle, sofern bekannt |
-| `stale` | Daten sind nach Altersgrenze oder fehlgeschlagenem Refresh veraltet. |
+| `stale` | Bei Wochenwerten: Daten veraltet; bei fehlgeschlagenem Live-Abruf: kein frischer Datensatz. |
 
-Ein fehlgeschlagener Refresh löscht keine vorhandenen Messpunkte.
-Eine Ressource kann deshalb `status: available` und zugleich `meta.stale: true`
-sowie `last_attempt_status: access_denied` melden. Das sind weiterhin die Daten
-des letzten erfolgreichen Abrufs.
+Fehlgeschlagene Wochenaktualisierungen erhalten die bisherige gültige Übersicht.
+Aktivitätsantworten enthalten dagegen die Daten dieses Abrufs. Bei einem Fehler
+werden keine alten archivierten Messpunkte als aktuelle Antwort ausgegeben.
+Bereits früher gespeicherte Aktivitäten werden durch die Umstellung nicht gelöscht.
 
 Die Metadaten eines Katalogeintrags belegen nicht, dass alle Teilressourcen
 geprüft sind. Dafür `availability` und die Metadaten der jeweiligen Teilressource lesen.
@@ -468,7 +513,7 @@ Fehler der Anwendung verwenden dieses Format:
 {
   "error": {
     "code": "activity_not_found",
-    "message": "Activity not found; synchronize its athlete or refresh explicitly.",
+    "message": "Requested Strava data could not be fetched.",
     "details": {}
   }
 }
@@ -481,11 +526,12 @@ Fehler der Anwendung verwenden dieses Format:
 | 401 | `request_failed`: Token fehlt oder ist ungültig |
 | 403 | `athlete_not_permitted`: Token erlaubt diesen Athleten nicht |
 | 404 | `athlete_not_found`, `activity_not_found`, `job_not_found` oder `summary_not_found` |
-| 409 | `sync_cooldown`, `source_not_enabled` oder `unaligned_streams` |
+| 409 | `athlete_ambiguous`, `sync_cooldown`, `source_not_enabled` oder `unaligned_streams` |
 | 422 | `invalid_request`, `invalid_range` oder `invalid_stream_types` |
 | 429 | Request-Limit des vorgeschalteten Proxys erreicht |
 | 500 | `internal_error` |
-| 503 | `configuration_unavailable` oder `summary_unavailable` |
+| 502 | `upstream_fetch_failed`: Strava-Abruf oder Antwortvalidierung fehlgeschlagen |
+| 503 | `source_busy`, `source_unavailable`, `upstream_access_denied`, `configuration_unavailable` oder `summary_unavailable` |
 
 Der öffentliche Proxy erlaubt GET und POST. Andere Methoden können HTTP 405
 erhalten. Fehler des Proxys, etwa 429 oder 405, können ein anderes Antwortformat
@@ -494,4 +540,4 @@ haben. Clients sollten zuerst den HTTP-Status prüfen und erst danach JSON auswe
 Der öffentliche Zugriff ist derzeit auf 60 Requests pro Minute je Client-IP
 mit einem Burst von 20 begrenzt. Große JSON-Antworten werden bei entsprechender
 Clientunterstützung gzip-komprimiert. Die Antworten verwenden
-`Cache-Control: no-store`; das interne Repository bleibt davon unabhängig.
+`Cache-Control: no-store`. Aktivitätsdaten liegen nur während der Anfrage im Speicher.

@@ -1,0 +1,9 @@
+Strava_API_TOKEN/
+.env
+.env.*
+secrets.py
+!.env.example
+!.env.sample
+secrets_*.py
+__pycache__/
+*.py[cod]

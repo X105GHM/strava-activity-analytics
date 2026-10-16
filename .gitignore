@@ -7,3 +7,4 @@ secrets.py
 secrets_*.py
 __pycache__/
 *.py[cod]
+.venv

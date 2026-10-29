@@ -15,10 +15,10 @@ aktivitäten = [
 
 
       {
-        "name": "Morgenlauf",
+        "name": "Lauf",
         "sportart": "Laufen",
-        "distanz_km": 5.2,
-        "dauer_min": 30
+        "distanz_km": 8.2,
+        "dauer_min": 42
     },
 
       {

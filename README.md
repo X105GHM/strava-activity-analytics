@@ -1,8 +1,8 @@
 # strava-activity-analytics
 Self-hosted training analytics platform for Strava activity data, sensor streams and long-term performance analysis.
 
-## Sprintziel
-Datenquellen identifizieren, repo organisieren, git einrichten
+## Sprintziel 1 (siehe Docs\Sprints\Sprint01)
+
 
 
 

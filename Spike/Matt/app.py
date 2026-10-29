@@ -1,1 +1,1 @@
-# Moin!
+print("Das ist ein erster Test")

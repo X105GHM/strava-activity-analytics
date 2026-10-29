@@ -8,3 +8,4 @@ secrets_*.py
 __pycache__/
 *.py[cod]
 Spike\Leo\.venv
+.venv

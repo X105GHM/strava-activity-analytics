@@ -1,1 +1,3 @@
 # Moin!
+
+print("Hello World")

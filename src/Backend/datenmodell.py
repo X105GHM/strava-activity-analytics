@@ -1,12 +1,13 @@
 # =====================================================
 #   Autor:                 Danilo
 #   Erstellungsdatum:      03.11.2026
-#   Zuletzt bearbeitet:    04.11.2026
+#   Zuletzt bearbeitet:    06.11.2026
 #   Beschreibung:          Datenmodell fuer Strava-Aktivitaeten mit Vererbung und Messpunkten.
 #   Datei:                 datenmodell.py
 # =====================================================
 
 # Die Einschätzung ob ein member optional ist oder nicht, basiert auf einer Analyse der Testdaten von ChatGPT.
+# Sensordaten können je nach Sportart, Aufnahmegeraet und Import fehlen.
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -27,22 +28,23 @@ class Messpunkt:
     speed_m_s: float
     velocity_smooth_m_s: float
     moving: bool
+    latitude: float | None = None
+    longitude: float | None = None
+    temperature_c: int | None = None
 
 
 @dataclass(kw_only=True)
 class LandMesspunkt(Messpunkt):
-    grade_percent: float
+    grade_percent: float | None = None
     altitude_m: float | None
-    latitude: float | None
-    longitude: float | None
     watts: int | None
     watts_calc: int | None
+    cadence: int | None = None
 
 
 @dataclass(kw_only=True)
 class RadMesspunkt(LandMesspunkt):
-    cadence: int | None
-    temperature_c: int | None
+    pass
 
 
 @dataclass(kw_only=True)
@@ -78,6 +80,7 @@ class Aktivitaet:
     average_heartrate_bpm: float | None
     max_heartrate_bpm: float | None
     calories: float | None
+    average_temp_c: float | None = None
 
     messpunkte: list[Messpunkt] = field(
         default_factory=list                    # Mit default_factory=list wird für jedes neu erzeugte Aktivitätsobjekt
@@ -89,16 +92,17 @@ class LandAktivitaet(Aktivitaet):
     elev_high_m: float | None
     elev_low_m: float | None
 
-    average_watts: float | None
-    max_watts: float | None
-    weighted_average_watts: float | None
-    kilojoules: float | None
+    average_cadence: float | None = None
+    average_watts: float | None = None
+    max_watts: float | None = None
+    weighted_average_watts: float | None = None
+    kilojoules: float | None = None
+    device_watts: bool | None = None
 
 
 @dataclass(kw_only=True)
 class RadAktivitaet(LandAktivitaet):
-    average_cadence: float | None
-    average_temp_c: float | None
+    pass
 
 
 @dataclass(kw_only=True)

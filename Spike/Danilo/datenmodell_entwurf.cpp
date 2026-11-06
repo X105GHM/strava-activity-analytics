@@ -2,7 +2,7 @@
 =====================================================
   Autor:                 Danilo
   Erstellungsdatum:      03.11.2026
-  Zuletzt bearbeitet:    04.11.2026
+  Zuletzt bearbeitet:    06.11.2026
   Beschreibung:          C++-Entwurf des Strava-Datenmodells mit Vererbung und Messpunkten.
   Datei:                 datenmodell_entwurf.cpp
 =====================================================
@@ -34,25 +34,23 @@ struct Messpunkt
     double speed_m_s{};
     double velocity_smooth_m_s{};
     bool moving{};
+    std::optional<double> latitude;
+    std::optional<double> longitude;
+    std::optional<int> temperature_c;
 
     virtual ~Messpunkt() = default;
 };
 
 struct LandMesspunkt : Messpunkt 
 {
-    double grade_percent{};
+    std::optional<double> grade_percent;
     std::optional<double> altitude_m;
-    std::optional<double> latitude;
-    std::optional<double> longitude;
     std::optional<int> watts;
     std::optional<int> watts_calc;
+    std::optional<int> cadence;
 };
 
-struct RadMesspunkt : LandMesspunkt 
-{
-    std::optional<int> cadence;
-    std::optional<int> temperature_c;
-};
+struct RadMesspunkt : LandMesspunkt {};
 
 struct LaufMesspunkt : LandMesspunkt {};
 
@@ -82,6 +80,7 @@ struct Aktivitaet
     std::optional<double> average_heartrate_bpm;
     std::optional<double> max_heartrate_bpm;
     std::optional<double> calories;
+    std::optional<double> average_temp_c;
 
     std::vector<std::unique_ptr<Messpunkt>> messpunkte;
 
@@ -93,17 +92,16 @@ struct LandAktivitaet : Aktivitaet
     std::optional<double> elev_high_m;
     std::optional<double> elev_low_m;
 
+    std::optional<double> average_cadence;
+
     std::optional<double> average_watts;
     std::optional<double> max_watts;
     std::optional<double> weighted_average_watts;
     std::optional<double> kilojoules;
+    std::optional<bool> device_watts;
 };
 
-struct RadAktivitaet : LandAktivitaet 
-{
-    std::optional<double> average_cadence;
-    std::optional<double> average_temp_c;
-};
+struct RadAktivitaet : LandAktivitaet {};
 
 struct LaufAktivitaet : LandAktivitaet {};
 
